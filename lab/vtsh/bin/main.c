@@ -1,7 +1,6 @@
-#include <stdio.h>
-#include <vtsh.h>
+#include "vtsh.h"
 
 int main() {
-  printf("%s", vtsh_prompt());
-  printf("Hello, world!\n");
+  vtsh_run();  // запускаем наш цикл оболочки
+  return 0;  // код 0 = успешное завершение программы
 }
