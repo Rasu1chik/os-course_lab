@@ -1,8 +1,9 @@
-# CMake
+.DS_Store
+.vscode/
 build/
-
-# Clangd
-.cache/
-
-# Python
+*.o
+*.out
+*.log
 __pycache__/
+*.swp
+
