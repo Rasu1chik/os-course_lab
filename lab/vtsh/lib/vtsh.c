@@ -13,7 +13,7 @@ const char* vtsh_prompt() {
   return "vtsh> ";
 }
 
-// --- Парсинг строки на команды (разделители: ; и \n) ---
+
 int parse_input(const char* input, command_t* commands, int* num_commands) {
   char input_copy[MAX_INPUT_SIZE];
   strncpy(input_copy, input, sizeof(input_copy) - 1);
@@ -37,7 +37,7 @@ int parse_input(const char* input, command_t* commands, int* num_commands) {
       continue;
     }
 
-    // разбор аргументов
+    
     commands[*num_commands].argc = 0;
     commands[*num_commands].args = malloc(MAX_ARGS * sizeof(char*));
 
@@ -61,9 +61,9 @@ int parse_input(const char* input, command_t* commands, int* num_commands) {
   return 0;
 }
 
-// --- Выполнение одной команды ---
+
 int run_command(command_t* cmd) {
-  // поддержка вложенных шеллов
+  
   if (strcmp(cmd->program, "./shell") == 0 ||
       strcmp(cmd->program, "shell") == 0) {
     vtsh_run();
@@ -86,15 +86,15 @@ int run_command(command_t* cmd) {
   return 0;
 }
 
-// --- Главный цикл оболочки ---
+
 void vtsh_run() {
   char input[INPUT_BUFFER_SIZE];
   command_t commands[MAX_COMMANDS];
   int num_commands;
 
-  // --- Неинтерактивный режим (тесты) ---
+  
   if (!isatty(STDIN_FILENO)) {
-    // Читаем первую строку побайтово, чтобы избежать буферизации
+    
     int idx = 0;
     char ch;
     while (idx < INPUT_BUFFER_SIZE - 1 && read(STDIN_FILENO, &ch, 1) == 1) {
@@ -107,11 +107,11 @@ void vtsh_run() {
     if (idx == 0)
       return;
 
-    // если пустой ввод
+    
     if (strlen(input) == 0 || strcmp(input, "\n") == 0)
       return;
 
-    // если команда cat — запустить cat и передать ему stdin
+    
     if (strncmp(input, "cat", 3) == 0 &&
         (input[3] == '\n' || input[3] == '\0' || input[3] == ' ' ||
          input[3] == '\t')) {
@@ -130,7 +130,7 @@ void vtsh_run() {
       return;
     }
 
-    // обычные команды
+    
     do {
       if (strlen(input) == 0 || strcmp(input, "\n") == 0)
         continue;
@@ -147,7 +147,7 @@ void vtsh_run() {
     return;
   }
 
-  // --- Интерактивный режим ---
+  
   while (true) {
     printf("%s", vtsh_prompt());
     fflush(stdout);

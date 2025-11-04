@@ -1,6 +1,6 @@
 #include "vtsh.h"
 
 int main() {
-  vtsh_run();  // запускаем наш цикл оболочки
-  return 0;  // код 0 = успешное завершение программы
+  vtsh_run();  
+  return 0;  
 }
