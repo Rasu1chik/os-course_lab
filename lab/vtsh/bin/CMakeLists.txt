@@ -33,3 +33,21 @@ target_link_libraries(
     PRIVATE
     m
 )
+
+add_executable(
+    ema-traverse-graph
+    ema-traverse-graph.c
+)
+
+target_include_directories(
+    ema-traverse-graph
+    PUBLIC
+    ${CMAKE_SOURCE_DIR}/lib
+)
+
+target_link_libraries(
+    ema-traverse-graph
+    PRIVATE
+    m
+)
+
