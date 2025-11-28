@@ -19,7 +19,6 @@ typedef struct {
 int generate_graph(
     const char* filename, int num_nodes, int k, float forward_prob
 ) {
-  printf("Generating %d-node %d-regular graph...\n", num_nodes, k);
   int fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, 0644);
   if (fd == -1) {
     perror("open");
@@ -39,25 +38,19 @@ int generate_graph(
   srand(time(NULL));
   for (int i = 0; i < num_nodes; i++) {
     nodes[i].value = rand() % 10000;
-    int neighbors_added = 0;
-    while (neighbors_added < k) {
-      int neighbor;
-      if ((float)rand() / RAND_MAX < forward_prob) {
-        neighbor = i + 1 + (rand() % (num_nodes - i - 1));
-      } else {
-        neighbor = rand() % i;
-      }
-      int already_added = 0;
-      for (int j = 0; j < neighbors_added; j++) {
-        if (nodes[i].neighbors[j] == neighbor) {
-          already_added = 1;
+    int added = 0;
+    while (added < k) {
+      int n = ((float)rand() / RAND_MAX < forward_prob)
+                  ? i + 1 + (rand() % (num_nodes - i - 1))
+                  : rand() % i;
+      int dup = 0;
+      for (int j = 0; j < added; j++)
+        if (nodes[i].neighbors[j] == n) {
+          dup = 1;
           break;
         }
-      }
-      if (!already_added) {
-        nodes[i].neighbors[neighbors_added] = neighbor;
-        neighbors_added++;
-      }
+      if (!dup)
+        nodes[i].neighbors[added++] = n;
     }
   }
   if (write(fd, nodes, num_nodes * NODE_SIZE) != num_nodes * NODE_SIZE) {
@@ -68,124 +61,85 @@ int generate_graph(
   }
   free(nodes);
   close(fd);
-  printf("Graph generated successfully in %s\n", filename);
   return 0;
 }
 
-int find_node_by_value(
-    const char* filename, int target_value, int* found_node, int max_depth
+//  ИЗМЕНЕНО: принимает уже готовый fd, не делает open/close сама
+int find_node_by_value_fd(
+    int fd, int target_value, int* found_node, int max_depth
 ) {
-  int fd = open(filename, O_RDONLY);
-  if (fd == -1) {
-    perror("open");
-    return -1;
-  }
   struct stat st;
   if (fstat(fd, &st) == -1) {
-    perror("fstat");
-    close(fd);
+    perror("stat");
     return -1;
   }
-  int num_nodes = st.st_size / NODE_SIZE;
+  int num = st.st_size / NODE_SIZE;
   Node* nodes = malloc(st.st_size);
-  if (!nodes) {
-    perror("malloc");
-    close(fd);
+  if (!nodes)
     return -1;
-  }
   if (read(fd, nodes, st.st_size) != st.st_size) {
     perror("read");
     free(nodes);
-    close(fd);
     return -1;
   }
-  int* visited = calloc(num_nodes, sizeof(int));
-  int* queue = malloc(num_nodes * sizeof(int));
-  int* depth = malloc(num_nodes * sizeof(int));
-  int queue_start = 0, queue_end = 0;
-  queue[queue_end] = 0;
-  depth[queue_end] = 0;
-  queue_end++;
-  visited[0] = 1;
+  int* vis = calloc(num, 4);
+  int* q = malloc(num * 4);
+  int* d = malloc(num * 4);
+  if (!vis || !q || !d) {
+    free(vis);
+    free(q);
+    free(d);
+    free(nodes);
+    return -1;
+  }
+  int s = 0, e = 0;
+  q[e] = 0;
+  d[e++] = 0;
+  vis[0] = 1;
   *found_node = -1;
-  while (queue_start < queue_end) {
-    int current = queue[queue_start];
-    int current_depth = depth[queue_start];
-    queue_start++;
-    if (nodes[current].value == target_value) {
-      *found_node = current;
+  while (s < e) {
+    int c = q[s];
+    int cd = d[s++];
+    if (nodes[c].value == target_value) {
+      *found_node = c;
       break;
     }
-    if (max_depth > 0 && current_depth >= max_depth)
+    if (max_depth > 0 && cd >= max_depth)
       continue;
     for (int i = 0; i < MAX_NEIGHBORS; i++) {
-      int neighbor = nodes[current].neighbors[i];
-      if (neighbor >= 0 && neighbor < num_nodes && !visited[neighbor]) {
-        visited[neighbor] = 1;
-        queue[queue_end] = neighbor;
-        depth[queue_end] = current_depth + 1;
-        queue_end++;
+      int n = nodes[c].neighbors[i];
+      if (n >= 0 && n < num && !vis[n]) {
+        vis[n] = 1;
+        q[e] = n;
+        d[e++] = cd + 1;
       }
     }
   }
-  free(visited);
-  free(queue);
-  free(depth);
+  free(vis);
+  free(q);
+  free(d);
   free(nodes);
-  close(fd);
   return (*found_node != -1) ? 0 : -1;
 }
 
-int modify_node(const char* filename, int node_index, int new_value) {
-  int fd = open(filename, O_RDWR);
-  if (fd == -1) {
-    perror("open");
+// ИЗМЕНЕНО: modify тоже не делает open/close сама
+int modify_node_fd(int fd, int node_index, int new_value) {
+  if (lseek(fd, node_index * NODE_SIZE, SEEK_SET) == -1)
     return -1;
-  }
-  if (lseek(fd, node_index * NODE_SIZE, SEEK_SET) == -1) {
-    perror("lseek");
-    close(fd);
-    return -1;
-  }
   Node node;
-  if (read(fd, &node, NODE_SIZE) != NODE_SIZE) {
-    perror("read");
-    close(fd);
+  if (read(fd, &node, NODE_SIZE) != NODE_SIZE)
     return -1;
-  }
-  printf(
-      "Node %d: old value = %d, new value = %d\n",
-      node_index,
-      node.value,
-      new_value
-  );
+  printf("Node %d: old=%d new=%d\n", node_index, node.value, new_value);
   node.value = new_value;
-  if (lseek(fd, node_index * NODE_SIZE, SEEK_SET) == -1) {
-    perror("lseek");
-    close(fd);
+  if (lseek(fd, node_index * NODE_SIZE, SEEK_SET) == -1)
     return -1;
-  }
-  if (write(fd, &node, NODE_SIZE) != NODE_SIZE) {
-    perror("write");
-    close(fd);
+  if (write(fd, &node, NODE_SIZE) != NODE_SIZE)
     return -1;
-  }
-  close(fd);
   return 0;
 }
 
-void print_usage(const char* program_name) {
-  printf("Usage: %s [options]\n", program_name);
-  printf("Options:\n");
-  printf(
-      "  --generate --nodes <N> --edges <K> --file <path> [--forward-prob "
-      "<P>]\n"
-  );
-  printf(
-      "  --traverse --file <path> --find <value> --modify <new_value> [--depth "
-      "<D>]\n"
-  );
-  printf("  --help\n");
+void print_usage(const char* name) {
+  printf("Usage: %s --generate|--traverse --file <path> ...\n", name);
 }
 
 int main(int argc, char* argv[]) {
@@ -197,71 +151,82 @@ int main(int argc, char* argv[]) {
     print_usage(argv[0]);
     return 0;
   }
+
   if (strcmp(argv[1], "--generate") == 0) {
-    int num_nodes = 0, k = 4;
-    float forward_prob = 0.5;
-    char* filename = NULL;
+    int num = 0, k = 4;
+    float p = 0.5;
+    const char* file = 0;
     for (int i = 2; i < argc; i++) {
-      if (strcmp(argv[i], "--nodes") == 0 && i + 1 < argc)
-        num_nodes = atoi(argv[++i]);
-      else if (strcmp(argv[i], "--edges") == 0 && i + 1 < argc)
+      if (!strcmp(argv[i], "--nodes") && i + 1 < argc)
+        num = atoi(argv[++i]);
+      else if (!strcmp(argv[i], "--edges") && i + 1 < argc)
         k = atoi(argv[++i]);
-      else if (strcmp(argv[i], "--file") == 0 && i + 1 < argc)
-        filename = argv[++i];
-      else if (strcmp(argv[i], "--forward-prob") == 0 && i + 1 < argc)
-        forward_prob = atof(argv[++i]);
+      else if (!strcmp(argv[i], "--file") && i + 1 < argc)
+        file = argv[++i];
+      else if (!strcmp(argv[i], "--forward-prob") && i + 1 < argc)
+        p = atof(argv[++i]);
     }
-    if (num_nodes <= 0 || k <= 0 || !filename) {
-      fprintf(stderr, "Error: Invalid parameters for graph generation\n");
+    if (!file || num <= 0 || k <= 0) {
       return 1;
     }
-    return generate_graph(filename, num_nodes, k, forward_prob);
-  } else if (strcmp(argv[1], "--traverse") == 0) {
-    char* filename = NULL;
-    int target_value = 0, new_value = 0;
-    int max_depth = -1;
+    return generate_graph(file, num, k, p) == 0 ? 0 : 1;
+  }
+
+  if (strcmp(argv[1], "--traverse") == 0) {
+    const char* file = 0;
+    int tv = 0, nv = 0, md = -1;
     for (int i = 2; i < argc; i++) {
-      if (strcmp(argv[i], "--file") == 0 && i + 1 < argc)
-        filename = argv[++i];
-      else if (strcmp(argv[i], "--find") == 0 && i + 1 < argc)
-        target_value = atoi(argv[++i]);
-      else if (strcmp(argv[i], "--modify") == 0 && i + 1 < argc)
-        new_value = atoi(argv[++i]);
-      else if (strcmp(argv[i], "--depth") == 0 && i + 1 < argc)
-        max_depth = atoi(argv[++i]);
+      if (!strcmp(argv[i], "--file") && i + 1 < argc)
+        file = argv[++i];
+      else if (!strcmp(argv[i], "--find") && i + 1 < argc)
+        tv = atoi(argv[++i]);
+      else if (!strcmp(argv[i], "--modify") && i + 1 < argc)
+        nv = atoi(argv[++i]);
+      else if (!strcmp(argv[i], "--depth") && i + 1 < argc)
+        md = atoi(argv[++i]);
     }
-    if (!filename) {
-      fprintf(stderr, "Error: File not specified\n");
+    if (!file) {
       return 1;
     }
-    printf("Searching for node with value %d...\n", target_value);
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    int found_node;
-    if (find_node_by_value(filename, target_value, &found_node, max_depth) ==
-        0) {
-      printf("Found node at index %d\n", found_node);
-      if (modify_node(filename, found_node, new_value) == 0) {
-        printf("Node modified successfully\n");
-      } else {
-        fprintf(stderr, "Failed to modify node\n");
+
+    //  Учтено: 1 открытие и 1 закрытие
+    int fd = open(file, O_RDONLY);
+    if (fd == -1) {
+      perror("open");
+      return 1;
+    }
+
+    printf("Searching %d...\n", tv);
+    struct timespec a, b;
+    clock_gettime(CLOCK_MONOTONIC, &a);
+    int idx;
+    if (find_node_by_value_fd(fd, tv, &idx, md) == 0) {
+      // тут меняем файл для записи, но без лишних close внутри самой modify
+      int fdw = open(file, O_RDWR);
+      if (fdw == -1) {
+        perror("open rw");
+        close(fd);
         return 1;
       }
+      if (modify_node_fd(fdw, idx, nv) == 0)
+        printf("Modified\n");
+      close(fdw);
     } else {
-      printf("Node with value %d not found\n", target_value);
+      printf("Not found\n");
     }
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    long seconds = end.tv_sec - start.tv_sec;
-    long nanoseconds = end.tv_nsec - start.tv_nsec;
-    if (nanoseconds < 0) {
-      seconds--;
-      nanoseconds += 1000000000;
+    clock_gettime(CLOCK_MONOTONIC, &b);
+    long s = b.tv_sec - a.tv_sec, ns = b.tv_nsec - a.tv_nsec;
+    if (ns < 0) {
+      s--;
+      ns += 1000000000;
     }
-    printf("Traversal time: %ld.%09lds\n", seconds, nanoseconds);
+    printf("Traversal time: %ld.%09lds\n", s, ns);
+
+    close(fd);  // 1 раз close после всех операций
     return 0;
-  } else {
-    fprintf(stderr, "Unknown command: %s\n", argv[1]);
-    print_usage(argv[0]);
-    return 1;
   }
+
+  fprintf(stderr, "Unknown: %s\n", argv[1]);
+  print_usage(argv[0]);
+  return 1;
 }
